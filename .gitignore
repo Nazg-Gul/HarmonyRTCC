@@ -1,0 +1,9 @@
+/firmware/HarmonyRTCC.X/build/default/
+/firmware/HarmonyRTCC.X/dist/default/
+
+# Makefiles autogenerados
+/firmware/HarmonyRTCC.X/nbproject/Makefile-default.mk
+/firmware/HarmonyRTCC.X/nbproject/Makefile-genesis.properties
+/firmware/HarmonyRTCC.X/nbproject/Makefile-impl.mk
+/firmware/HarmonyRTCC.X/nbproject/Makefile-variables.mk
+/firmware/HarmonyRTCC.X/nbproject/Makefile-local-default.mk
