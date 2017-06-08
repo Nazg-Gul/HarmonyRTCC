@@ -141,8 +141,8 @@ void APP_Tasks ( void )
             // Check overall status.
             if (appInitialized) {
                 SYS_CONSOLE_MESSAGE("APP: Initialization successful.\r\n");
-                // appData.state = APP_STATE_TEST_WRITE_DATE_TIME;
-                appData.state = APP_STATE_TEST_READ_DATE_TIME;
+                appData.state = APP_STATE_TEST_WRITE_DATE_TIME;
+                // appData.state = APP_STATE_TEST_READ_DATE_TIME;
             } else {
                 SYS_CONSOLE_MESSAGE("APP: Initialization failed!\r\n");
                 appData.state = APP_STATE_SERVICE_TASKS;
@@ -160,7 +160,7 @@ void APP_Tasks ( void )
             date_time.day = 4;
             date_time.month = 6;
             date_time.year = 17;
-            RTC_MCP7940N_WriteDateTime(&appData.rtc, &date_time);
+            RTC_MCP7940N_WriteDateAndTime(&appData.rtc, &date_time);
             appData.state = APP_STATE_TEST_WAIT_DATE_TIME;
             break;
         }
@@ -177,7 +177,9 @@ void APP_Tasks ( void )
 
         case APP_STATE_TEST_READ_REGISTER:
         {
-            RTC_MCP7940N_ReadRegister(&appData.rtc, MCP7940N_REG_ADDR_SECONDS);
+            RTC_MCP7940N_ReadRegister(&appData.rtc,
+                                      MCP7940N_REG_ADDR_SECONDS,
+                                      &appData.register_value);
             appData.state = APP_STATE_TEST_WAIT_READ_REGISTER;
             break;
         }
@@ -188,7 +190,7 @@ void APP_Tasks ( void )
             } else {
                 SYS_CONSOLE_MESSAGE("APP: Finished reading register.\r\n");
                 SYS_CONSOLE_PRINT("APP: Register value: %d\r\n",
-                                  appData.rtc.register_value);
+                                  appData.register_value);
                 appData.state = APP_STATE_TEST_READ_DATE_TIME;
             }
             break;
@@ -214,7 +216,7 @@ void APP_Tasks ( void )
 
         case APP_STATE_TEST_ENABLE_BATTERY:
         {
-            RTC_MCP7940N_EnableBatterBackup(&appData.rtc, true);
+            RTC_MCP7940N_EnableBatteryBackup(&appData.rtc, true);
             appData.state = APP_STATE_TEST_WAIT_ENABLE_BATTERY;
             break;
         }
@@ -232,7 +234,7 @@ void APP_Tasks ( void )
 
         case APP_STATE_TEST_READ_DATE_TIME:
         {
-            RTC_MCP7940N_ReadDateAndTime(&appData.rtc);
+            RTC_MCP7940N_ReadDateAndTime(&appData.rtc, &appData.date_time);
             appData.state = APP_STATE_TEST_WAIT_READ_DATE_TIME;
             break;
         }
@@ -243,13 +245,13 @@ void APP_Tasks ( void )
                 RTC_MCP7940N_Tasks(&appData.rtc);
             } else {
                 SYS_CONSOLE_MESSAGE("APP: Date was read.\r\n");
-                SYS_CONSOLE_PRINT("  Seconds: %d\r\n", appData.rtc.date_time.seconds);
-                SYS_CONSOLE_PRINT("  Minutes: %d\r\n", appData.rtc.date_time.minutes);
-                SYS_CONSOLE_PRINT("  Hours: %d\r\n", appData.rtc.date_time.hours);
-                SYS_CONSOLE_PRINT("  Day of week: %d\r\n", appData.rtc.date_time.day_of_week);
-                SYS_CONSOLE_PRINT("  Day: %d\r\n", appData.rtc.date_time.day);
-                SYS_CONSOLE_PRINT("  Month: %d\r\n", appData.rtc.date_time.month);
-                SYS_CONSOLE_PRINT("  Year: %d\r\n", appData.rtc.date_time.year);
+                SYS_CONSOLE_PRINT("  Seconds: %d\r\n", appData.date_time.seconds);
+                SYS_CONSOLE_PRINT("  Minutes: %d\r\n", appData.date_time.minutes);
+                SYS_CONSOLE_PRINT("  Hours: %d\r\n", appData.date_time.hours);
+                SYS_CONSOLE_PRINT("  Day of week: %d\r\n", appData.date_time.day_of_week);
+                SYS_CONSOLE_PRINT("  Day: %d\r\n", appData.date_time.day);
+                SYS_CONSOLE_PRINT("  Month: %d\r\n", appData.date_time.month);
+                SYS_CONSOLE_PRINT("  Year: %d\r\n", appData.date_time.year);
                 appData.state = APP_STATE_SERVICE_TASKS;
             }
             break;

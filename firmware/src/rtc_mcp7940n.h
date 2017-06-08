@@ -32,12 +32,12 @@
 extern "C" {
 #endif
 
-/////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // I2C bus address of the RTC itself.
 
 #define MCP7940N_I2C_ADDRESS    0x6f
 
-/////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////
 // Addresses of various registers.
 
 #define MCP7940N_REG_ADDR_SECONDS      0x00
@@ -109,11 +109,6 @@ extern "C" {
 #define MCP7940N_FLAG_OSC_ON          0x20  /* State of the oscillator */
 
 ///////////////////////////
-// Logging.
-
-#define RTC_MCP7940N_LOG_PREFIX "MCP7940N: "
-
-///////////////////////////
 // Buffers.
   
 #define RTC_MCP7940N_MAX_TRANSMIT_BUFFSER_SIZE 16
@@ -137,8 +132,10 @@ typedef enum RTC_MCP7940N_NextTask {
   RTC_MCP7940N_TASK_NONE = 0,
   RTC_MCP7940N_TASK_OSCILLATOR_UPDATE_ENABLE,
   RTC_MCP7940N_TASK_OSCILLATOR_UPDATE_DISABLE,
+  RTC_MCP7940N_TASK_OSCILLATOR_UPDATE_STATUS,
   RTC_MCP7940N_TASK_BATTERY_UPDATE_ENABLE,
   RTC_MCP7940N_TASK_BATTERY_UPDATE_DISABLE,
+  RTC_MCP7940N_TASK_BATTERY_UPDATE_STATUS,
   RTC_MCP7940N_TASK_DATE_TIME_CONVERT_BCD,
 } RTC_MCP7940N_NextTask;
 
@@ -162,15 +159,17 @@ typedef struct RTC_MCP7940N {
   // I2C bus related handles.
   RTC_MCP7940N_DriverHandle i2c_handle;
   RTC_MCP7940N_BufferHandle i2c_buffer_handle;
-  
+
   // Buffer to be transmitted,
   uint8_t transmit_buffer[RTC_MCP7940N_MAX_TRANSMIT_BUFFSER_SIZE];
 
-  // Register value, available after RTC_MCP7940N_ReadRegister.
-  uint8_t register_value;
-
-  // Date and time after RTC_MCP7940N_ReadDateAndTime.
-  RTC_MCP7940N_DateTime date_time;
+  // Values used by intermediate tasks.
+  // Must never be used externally.
+  struct {
+    uint8_t register_value;
+    RTC_MCP7940N_DateTime* date_time;
+    bool* return_status;
+  } _private;
 } RTC_MCP7940N;
 
 // Initialize MCP7940N RTC descriptor at the given I2C module index.
@@ -190,26 +189,35 @@ bool RTC_MCP7940N_IsBusy(RTC_MCP7940N* rtc);
 // Set current date and time.
 //
 // NOTE: date_time->day_of_week is ignored.
-void RTC_MCP7940N_WriteDateTime(RTC_MCP7940N* rtc,
-                                RTC_MCP7940N_DateTime* date_time);
+void RTC_MCP7940N_WriteDateAndTime(RTC_MCP7940N* rtc,
+                                   const RTC_MCP7940N_DateTime* date_time);
 
 // Read current date and time.
 //
-// The result is stored in rtc->date_time and can be accessed after
+// The result is stored in date_time and can be accessed after
 // RTC becomes free from tasks.
-void RTC_MCP7940N_ReadDateAndTime(RTC_MCP7940N* rtc);
+void RTC_MCP7940N_ReadDateAndTime(RTC_MCP7940N* rtc,
+                                  RTC_MCP7940N_DateTime* date_time);
 
 // Schedule task for reading given register value.
 //
-// The value will be stored in rtc->register_value and available after
-// RTC becomes free form tasks.
-void RTC_MCP7940N_ReadRegister(RTC_MCP7940N* rtc, uint8_t register_address);
+// The value will be stored in register_value and available after
+// RTC becomes free from tasks.
+void RTC_MCP7940N_ReadRegister(RTC_MCP7940N* rtc,
+                               uint8_t register_address,
+                               uint8_t* register_value);
 
 // Set enabled bit on the oscillator.
 void RTC_MCP7940N_EnableOscillator(RTC_MCP7940N* rtc, bool enable);
 
+// Check whether oscillator is enabled.
+void RTC_MCP7940N_OscillatorStatus(RTC_MCP7940N* rtc, bool* enabled);
+
 // Set enabled bit on the battery backup.
-void RTC_MCP7940N_EnableBatterBackup(RTC_MCP7940N* rtc, bool enable);
+void RTC_MCP7940N_EnableBatteryBackup(RTC_MCP7940N* rtc, bool enable);
+
+// Check whether battery backup is enabled.
+void RTC_MCP7940N_BatteryBackupStatus(RTC_MCP7940N* rtc, bool* enabled);
 
 #ifdef __cplusplus
 }  // extern "C"

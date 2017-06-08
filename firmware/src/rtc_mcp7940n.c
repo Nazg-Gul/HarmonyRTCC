@@ -27,14 +27,16 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Handy compatibility/abstraction macros and types.
 
+#define RTC_MCP7940N_LOG_PREFIX "MCP7940N: "
+
 #define ERROR_MESSAGE(message) \
     SYS_CONSOLE_MESSAGE(RTC_MCP7940N_LOG_PREFIX message)
 
 #define DEBUG_MESSAGE(message) \
     SYS_DEBUG_MESSAGE(0, "[DEBUG] " RTC_MCP7940N_LOG_PREFIX message)
 
-#define DEBUG_PRINT(message, ...) \
-    SYS_DEBUG_PRINT(0, "[DEBUG] " RTC_MCP7940N_LOG_PREFIX message, ##__VA_ARGS__)
+#define DEBUG_PRINT(format, ...) \
+    SYS_DEBUG_PRINT(0, "[DEBUG] " RTC_MCP7940N_LOG_PREFIX format, ##__VA_ARGS__)
 
 ////////////////////////////////////////////////////////////////////////////////
 // Internal routines.
@@ -56,7 +58,7 @@ static DRV_I2C_BUFFER_EVENT getI2CTransferStatus(RTC_MCP7940N* rtc) {
 }
 
 static bool checkI2CBufferReadyForTransmit(RTC_MCP7940N* rtc) {
-  return (rtc->i2c_buffer_handle == (DRV_I2C_BUFFER_HANDLE) NULL) || 
+  return (rtc->i2c_buffer_handle == (DRV_I2C_BUFFER_HANDLE) NULL) ||
          (getI2CTransferStatus(rtc) == DRV_I2C_BUFFER_EVENT_COMPLETE) ||
          (getI2CTransferStatus(rtc) == DRV_I2C_BUFFER_EVENT_ERROR);
 }
@@ -113,41 +115,56 @@ static bool performI2CTransmitThenReceive(RTC_MCP7940N* rtc,
 
 static void oscillatorUpdateBits(RTC_MCP7940N* rtc) {
   DEBUG_PRINT("Register value before updating oscillator: %d.\r\n",
-              rtc->register_value);
+              rtc->_private.register_value);
   rtc->transmit_buffer[0] = MCP7940N_REG_ADDR_SECONDS;
   if (rtc->next_task == RTC_MCP7940N_TASK_OSCILLATOR_UPDATE_ENABLE) {
-    rtc->transmit_buffer[1] = rtc->register_value | 
+    rtc->transmit_buffer[1] = rtc->_private.register_value |
                               MCP7940N_FLAG_START_OSCILLATOR;
   } else {
-    rtc->transmit_buffer[1] = rtc->register_value &
+    rtc->transmit_buffer[1] = rtc->_private.register_value &
                               (~MCP7940N_FLAG_START_OSCILLATOR);
   }
   performI2CTransmit(rtc, 2);
 }
 
+static void oscillatorUpdateStatus(RTC_MCP7940N* rtc) {
+  DEBUG_PRINT("Fetched register value before updating: %d.\r\n",
+              rtc->_private.register_value);
+  const bool enabled = (rtc->_private.register_value & MCP7940N_FLAG_START_OSCILLATOR);
+  *rtc->_private.return_status = enabled;
+}
+
 static void batteryUpdateBits(RTC_MCP7940N* rtc) {
   DEBUG_PRINT("Register value before updating battery: %d.\r\n",
-              rtc->register_value);
+              rtc->_private.register_value);
   rtc->transmit_buffer[0] = MCP7940N_REG_ADDR_DAY_OF_WEEK;
   if (rtc->next_task == RTC_MCP7940N_TASK_BATTERY_UPDATE_ENABLE) {
-    rtc->transmit_buffer[1] = rtc->register_value | 
+    rtc->transmit_buffer[1] = rtc->_private.register_value |
                               MCP7940N_FLAG_BATTERY_ENABLE;
   } else {
-    rtc->transmit_buffer[1] = rtc->register_value &
+    rtc->transmit_buffer[1] = rtc->_private.register_value &
                               (~MCP7940N_FLAG_BATTERY_ENABLE);
   }
   performI2CTransmit(rtc, 2);
 }
 
-static void dateTimeConvertBCD(RTC_MCP7940N* rtc) {
-  rtc->date_time.seconds = convertFromBCD(rtc->date_time.seconds & 0x7f);
-  rtc->date_time.minutes = convertFromBCD(rtc->date_time.minutes & 0x7f);
-  rtc->date_time.hours = convertFromBCD(rtc->date_time.hours & 0x3f);
+static void batteryUpdateStatus(RTC_MCP7940N* rtc) {
+  DEBUG_PRINT("Fetched register value before updating: %d.\r\n",
+              rtc->_private.register_value);
+  const bool enabled = (rtc->_private.register_value & MCP7940N_FLAG_BATTERY_ENABLE);
+  *rtc->_private.return_status = enabled;
+}
 
-  rtc->date_time.day_of_week = convertFromBCD(rtc->date_time.day_of_week & 0x7);
-  rtc->date_time.day = convertFromBCD(rtc->date_time.day & 0xf);
-  rtc->date_time.month = convertFromBCD(rtc->date_time.month & 0xf);
-  rtc->date_time.year = convertFromBCD(rtc->date_time.year & 0xff);
+static void dateTimeConvertBCD(RTC_MCP7940N* rtc) {
+  RTC_MCP7940N_DateTime* date_time = rtc->_private.date_time;
+  date_time->seconds = convertFromBCD(date_time->seconds & 0x7f);
+  date_time->minutes = convertFromBCD(date_time->minutes & 0x7f);
+  date_time->hours = convertFromBCD(date_time->hours & 0x3f);
+
+  date_time->day_of_week = convertFromBCD(date_time->day_of_week & 0x7);
+  date_time->day = convertFromBCD(date_time->day & 0xf);
+  date_time->month = convertFromBCD(date_time->month & 0xf);
+  date_time->year = convertFromBCD(date_time->year & 0xff);
 }
 
 static void checkI2CStatus(RTC_MCP7940N* rtc) {
@@ -165,11 +182,19 @@ static void checkI2CStatus(RTC_MCP7940N* rtc) {
           oscillatorUpdateBits(rtc);
           rtc->next_task = RTC_MCP7940N_TASK_NONE;
           break;
+        case RTC_MCP7940N_TASK_OSCILLATOR_UPDATE_STATUS:
+          rtc->next_task = RTC_MCP7940N_TASK_NONE;
+          oscillatorUpdateStatus(rtc);
+          break;
         case RTC_MCP7940N_TASK_BATTERY_UPDATE_ENABLE:
         case RTC_MCP7940N_TASK_BATTERY_UPDATE_DISABLE:
           // NOTE: Update next_task AFTER the function.
           batteryUpdateBits(rtc);
           rtc->next_task = RTC_MCP7940N_TASK_NONE;
+          break;
+        case RTC_MCP7940N_TASK_BATTERY_UPDATE_STATUS:
+          rtc->next_task = RTC_MCP7940N_TASK_NONE;
+          batteryUpdateStatus(rtc);
           break;
         case RTC_MCP7940N_TASK_DATE_TIME_CONVERT_BCD:
           rtc->next_task = RTC_MCP7940N_TASK_NONE;
@@ -188,8 +213,10 @@ static void checkI2CStatus(RTC_MCP7940N* rtc) {
 ////////////////////////////////////////////////////////////////////////////////
 // Public API.
 
-bool RTC_MCP7940N_Initialize(RTC_MCP7940N* rtc, 
+bool RTC_MCP7940N_Initialize(RTC_MCP7940N* rtc,
                              SYS_MODULE_INDEX i2c_module_index) {
+  // TODO(sergey): Ignore for release builds to save CPU ticks?
+  memset(rtc, 0, sizeof(*rtc));
   rtc->i2c_handle = DRV_I2C_Open(i2c_module_index, DRV_IO_INTENT_READWRITE);
   if (rtc->i2c_handle == DRV_HANDLE_INVALID) {
     ERROR_MESSAGE("Error opening I2C bus handle.\r\n");
@@ -198,6 +225,7 @@ bool RTC_MCP7940N_Initialize(RTC_MCP7940N* rtc,
   }
   rtc->state = RTC_MCP7940N_STATE_NONE;
   rtc->next_task = RTC_MCP7940N_TASK_NONE;
+  rtc->i2c_buffer_handle = NULL;
   DEBUG_MESSAGE("New RTC handle is initialized.\r\n");
   return true;
 }
@@ -221,8 +249,8 @@ bool RTC_MCP7940N_IsBusy(RTC_MCP7940N* rtc) {
            rtc->state == RTC_MCP7940N_STATE_ERROR);
 }
 
-void RTC_MCP7940N_WriteDateTime(RTC_MCP7940N* rtc,
-                                RTC_MCP7940N_DateTime* date_time) {
+void RTC_MCP7940N_WriteDateAndTime(RTC_MCP7940N* rtc,
+                                   const RTC_MCP7940N_DateTime* date_time) {
   DEBUG_MESSAGE("Begin transmitting date and time to RTC.\r\n");
   // Prepare buffer to be transmitted.
   rtc->transmit_buffer[0] = MCP7940N_REG_ADDR_SECONDS;
@@ -240,25 +268,29 @@ void RTC_MCP7940N_WriteDateTime(RTC_MCP7940N* rtc,
   performI2CTransmit(rtc, 8);
 }
 
-void RTC_MCP7940N_ReadDateAndTime(RTC_MCP7940N* rtc) {
+void RTC_MCP7940N_ReadDateAndTime(RTC_MCP7940N* rtc,
+                                  RTC_MCP7940N_DateTime* date_time) {
   DEBUG_PRINT("Begin sequence to read current date and time\r\n");
   // Prepare transmittance buffer.
   rtc->transmit_buffer[0] = MCP7940N_REG_ADDR_SECONDS;
   // Schedule receive.
   rtc->next_task = RTC_MCP7940N_TASK_DATE_TIME_CONVERT_BCD;
+  rtc->_private.date_time = date_time;
   performI2CTransmitThenReceive(rtc,
                                 1,
-                                (uint8_t*)&rtc->date_time, 
-                                sizeof(rtc->date_time));
+                                (uint8_t*)date_time, sizeof(*date_time));
 }
 
-void RTC_MCP7940N_ReadRegister(RTC_MCP7940N* rtc, uint8_t register_address) {
+void RTC_MCP7940N_ReadRegister(RTC_MCP7940N* rtc,
+                               uint8_t register_address,
+                               uint8_t* register_value) {
   DEBUG_PRINT("Begin receiving register %x from RTC.\r\n", register_address);
-  rtc->register_value = 0;
   // Prepare transmittance buffer.
   rtc->transmit_buffer[0] = register_address;
   // Schedule receive.
-  performI2CTransmitThenReceive(rtc, 1, &rtc->register_value, 1);
+  performI2CTransmitThenReceive(rtc,
+                                1,
+                                register_value, sizeof(*register_value));
 }
 
 void RTC_MCP7940N_EnableOscillator(RTC_MCP7940N* rtc, bool enable) {
@@ -272,10 +304,25 @@ void RTC_MCP7940N_EnableOscillator(RTC_MCP7940N* rtc, bool enable) {
   } else {
     rtc->next_task = RTC_MCP7940N_TASK_OSCILLATOR_UPDATE_DISABLE;
   }
-  performI2CTransmitThenReceive(rtc, 1, &rtc->register_value, 1);
+  performI2CTransmitThenReceive(
+      rtc,
+      1,
+      &rtc->_private.register_value, sizeof(rtc->_private.register_value));
 }
 
-void RTC_MCP7940N_EnableBatterBackup(RTC_MCP7940N* rtc, bool enable) {
+void RTC_MCP7940N_OscillatorStatus(RTC_MCP7940N* rtc, bool* enabled) {
+  DEBUG_MESSAGE("Begin sequence to check whether oscillator is enabled.\r\n");
+  rtc->transmit_buffer[0] = MCP7940N_REG_ADDR_SECONDS;
+  // Schedule receive.
+  rtc->next_task = RTC_MCP7940N_TASK_OSCILLATOR_UPDATE_STATUS;
+  rtc->_private.return_status = enabled;
+  performI2CTransmitThenReceive(
+      rtc,
+      1,
+      &rtc->_private.register_value, sizeof(rtc->_private.register_value));
+}
+
+void RTC_MCP7940N_EnableBatteryBackup(RTC_MCP7940N* rtc, bool enable) {
   DEBUG_PRINT("Begin sequence to set battery backup to %s.\r\n",
               enable ? "ENABLED" : "DISABLED");
   // Prepare transmittance buffer.
@@ -286,5 +333,21 @@ void RTC_MCP7940N_EnableBatterBackup(RTC_MCP7940N* rtc, bool enable) {
   } else {
     rtc->next_task = RTC_MCP7940N_TASK_BATTERY_UPDATE_DISABLE;
   }
-  performI2CTransmitThenReceive(rtc, 1, &rtc->register_value, 1);
+  performI2CTransmitThenReceive(
+      rtc,
+      1,
+      &rtc->_private.register_value, sizeof(rtc->_private.register_value));
+}
+
+void RTC_MCP7940N_BatteryBackupStatus(RTC_MCP7940N* rtc, bool* enabled) {
+  DEBUG_MESSAGE("Begin sequence to check whether battery backup "
+                "is enabled.\r\n");
+  rtc->transmit_buffer[0] = MCP7940N_REG_ADDR_DAY_OF_WEEK;
+  // Schedule receive.
+  rtc->next_task = RTC_MCP7940N_TASK_BATTERY_UPDATE_STATUS;
+  rtc->_private.return_status = enabled;
+  performI2CTransmitThenReceive(
+      rtc,
+      1,
+      &rtc->_private.register_value, sizeof(rtc->_private.register_value));
 }

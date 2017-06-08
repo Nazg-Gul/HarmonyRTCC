@@ -126,6 +126,9 @@ typedef struct
     APP_STATES state;
 
     RTC_MCP7940N rtc;
+
+    uint8_t register_value;
+    RTC_MCP7940N_DateTime date_time;
 } APP_DATA;
 
 
