@@ -109,9 +109,10 @@ extern "C" {
 #define MCP7940N_FLAG_OSC_ON          0x20  /* State of the oscillator */
 
 ///////////////////////////
-// Buffers.
-  
-#define RTC_MCP7940N_MAX_TRANSMIT_BUFFSER_SIZE 16
+// Constants.
+
+// Total number of addressable registers.
+#define RTC_MCP7940N_NUM_REGISTERS 31
 
 ///////////////////////////
 // Descriptor of RTC itself.
@@ -137,6 +138,7 @@ typedef enum RTC_MCP7940N_NextTask {
   RTC_MCP7940N_TASK_BATTERY_UPDATE_DISABLE,
   RTC_MCP7940N_TASK_BATTERY_UPDATE_STATUS,
   RTC_MCP7940N_TASK_DATE_TIME_CONVERT_BCD,
+  RTC_MCP7940N_TASK_DATE_TIME_UPDATE_AND_TRANSMIT,
 } RTC_MCP7940N_NextTask;
 
 typedef struct RTC_MCP7940N_DateTime {
@@ -160,15 +162,99 @@ typedef struct RTC_MCP7940N {
   RTC_MCP7940N_DriverHandle i2c_handle;
   RTC_MCP7940N_BufferHandle i2c_buffer_handle;
 
-  // Buffer to be transmitted,
-  uint8_t transmit_buffer[RTC_MCP7940N_MAX_TRANSMIT_BUFFSER_SIZE];
+  union {
+    ////////////////////////////////////////////////////////////////////////////
+    // Date and time.
 
-  // Values used by intermediate tasks.
-  // Must never be used externally.
-  struct {
-    uint8_t register_value;
-    RTC_MCP7940N_DateTime* date_time;
-    bool* return_status;
+    // Storage related on date-time reading from RTC routines.
+    struct {
+      // Pointer to the date and time structure. This is where the date and time
+      // are being read to and where BCD conversion will take place in.
+      //
+      // NOTE: This is a pointer to an external memory.
+      RTC_MCP7940N_DateTime* date_time_ptr;
+      // Buffer used to send query for the date-time registers.
+      uint8_t transmit_buffer[1];
+    } date_time_read;
+
+    // Storage related on date-time writing from RTC routines.
+    struct {
+      // Previous state of all registers which are going to be overwritten.
+      //
+      // NOTE: We do the following trick here: we read previous registers value
+      // starting st address of 1. This way we can prepend register address for
+      // transmittance and re-use the buffer more easily.
+      uint8_t register_storage[sizeof(RTC_MCP7940N_DateTime) + 1];
+      // Date and time to be written to the RTC.
+      RTC_MCP7940N_DateTime date_time;
+    } date_time_write;
+
+    ////////////////////////////////////////////////////////////////////////////
+    // Oscillator.
+
+    // Storage related on oscillator enable/disable.
+    struct {
+      // Current value of register coming from RTC.
+      uint8_t current_register_value;
+      // Buffer is used for both receiving current register value and sending
+      // the new one.
+      uint8_t transmit_buffer[2];
+    } oscillator_bits;
+
+    // Storage related on oscillator status fetch.
+    struct {
+      // Current value of register coming from RTC.
+      uint8_t current_register_value;
+      // This is where status will be written to.
+      bool* return_status_ptr;
+      // Buffer is used for to transmit read operation from RTC.
+      uint8_t transmit_buffer[1];
+    } oscillator_status;
+
+    ////////////////////////////////////////////////////////////////////////////
+    // Battery backup.
+
+    // Storage related on battery backup enable/disable.
+    struct {
+      // Current value of register coming from RTC.
+      uint8_t current_register_value;
+      // Buffer is used for both receiving current register value and sending
+      // the new one.
+      uint8_t transmit_buffer[2];
+    } battery_bits;
+
+    // Storage related on battery backup status fetch.
+    struct {
+      // Current value of register coming from RTC.
+      uint8_t current_register_value;
+      // This is where status will be written to.
+      bool* return_status_ptr;
+      // Buffer is used for to transmit read operation from RTC.
+      uint8_t transmit_buffer[1];
+    } battery_status;
+
+    ////////////////////////////////////////////////////////////////////////////
+    // Register read/write.
+
+    // Storage related on ReadRegister command.
+    struct {
+      uint8_t transmit_buffer[1];
+    } register_read;
+
+    // Storage related on WriteRegister command.
+    struct {
+      uint8_t transmit_buffer[2];
+    } register_write;
+
+    // Storage related on ReadNumRegisters command.
+    struct {
+      uint8_t transmit_buffer[1];
+    } register_num_read;
+
+    // Storage related on WriteNumRegisters command.
+    struct {
+      uint8_t transmit_buffer[RTC_MCP7940N_NUM_REGISTERS];
+    } register_num_write;
   } _private;
 } RTC_MCP7940N;
 
@@ -206,6 +292,19 @@ void RTC_MCP7940N_ReadDateAndTime(RTC_MCP7940N* rtc,
 void RTC_MCP7940N_ReadRegister(RTC_MCP7940N* rtc,
                                uint8_t register_address,
                                uint8_t* register_value);
+
+// Write single register value.
+void RTC_MCP7940N_WriteRegister(RTC_MCP7940N* rtc,
+                                uint8_t register_address,
+                                uint8_t register_value);
+
+// Similar to above, but operates with given number of registers.
+void RTC_MCP7940N_ReadNumRegisters(RTC_MCP7940N* rtc,
+                                   uint8_t* register_storage,
+                                   uint8_t num_registers);
+void RTC_MCP7940N_WriteNumRegisters(RTC_MCP7940N* rtc,
+                                    const uint8_t* register_storage,
+                                    uint8_t num_registers);
 
 // Set enabled bit on the oscillator.
 void RTC_MCP7940N_EnableOscillator(RTC_MCP7940N* rtc, bool enable);
